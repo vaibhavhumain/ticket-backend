@@ -22,9 +22,12 @@ exports.createTicket = async (req, res) => {
     });
 
     await ticket.save();
+
+    // ✅ Return full ticket object
     res.status(201).json(ticket);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ Error creating ticket:", err.message);
+    res.status(500).json({ message: "Failed to create ticket", error: err.message });
   }
 };
 
@@ -40,9 +43,10 @@ exports.getTickets = async (req, res) => {
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email");
 
-    res.json(tickets);
+    res.status(200).json(tickets);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ Error fetching tickets:", err.message);
+    res.status(500).json({ message: "Failed to fetch tickets", error: err.message });
   }
 };
 
@@ -54,7 +58,9 @@ exports.getTicketById = async (req, res) => {
       .populate("assignedTo", "name email")
       .populate("history.changedBy", "name email");
 
-    if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+    if (!ticket) {
+      return res.status(404).json({ message: "Ticket not found" });
+    }
 
     // Restrict access if not admin, creator, or assigned user
     if (
@@ -65,9 +71,10 @@ exports.getTicketById = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to view this ticket" });
     }
 
-    res.json(ticket);
+    res.status(200).json(ticket);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ Error fetching ticket:", err.message);
+    res.status(500).json({ message: "Failed to fetch ticket", error: err.message });
   }
 };
 
@@ -79,7 +86,7 @@ exports.updateTicket = async (req, res) => {
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Check basic fields (creator or admin can edit)
+    // ✅ Allow creator or admin to edit base fields
     if (req.user.role === "admin" || ticket.createdBy.toString() === req.user.id) {
       if (title) ticket.title = title;
       if (description) ticket.description = description;
@@ -89,7 +96,7 @@ exports.updateTicket = async (req, res) => {
       if (attachments) ticket.attachments = attachments;
     }
 
-    // Check status updates (only assigned user or admin)
+    // ✅ Allow only assigned user or admin to change status
     if (status && status !== ticket.status) {
       if (
         ticket.assignedTo?.toString() !== req.user.id &&
@@ -106,9 +113,10 @@ exports.updateTicket = async (req, res) => {
     }
 
     await ticket.save();
-    res.json(ticket);
+    res.status(200).json(ticket);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ Error updating ticket:", err.message);
+    res.status(500).json({ message: "Failed to update ticket", error: err.message });
   }
 };
 
@@ -123,8 +131,9 @@ exports.deleteTicket = async (req, res) => {
     }
 
     await ticket.deleteOne();
-    res.json({ message: "Ticket deleted successfully" });
+    res.status(200).json({ message: "Ticket deleted successfully" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ Error deleting ticket:", err.message);
+    res.status(500).json({ message: "Failed to delete ticket", error: err.message });
   }
 };
