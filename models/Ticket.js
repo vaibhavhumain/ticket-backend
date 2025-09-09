@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+
 const ticketSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -17,8 +18,10 @@ const ticketSchema = new mongoose.Schema(
     },
 
     category: { type: String, default: "general" },
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
     attachments: [{ type: String }],
 
     history: [
@@ -29,7 +32,6 @@ const ticketSchema = new mongoose.Schema(
       },
     ],
 
-    // 👇 Add comments
     comments: [
       {
         text: { type: String, required: true },
@@ -40,3 +42,5 @@ const ticketSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+module.exports = mongoose.models.Ticket || mongoose.model("Ticket", ticketSchema);
