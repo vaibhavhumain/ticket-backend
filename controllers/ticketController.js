@@ -80,15 +80,18 @@ exports.getTicketById = async (req, res) => {
 
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    if (
-      req.user.role !== "admin" &&
-      ticket.createdBy._id.toString() !== req.user.id &&
-      ticket.assignedTo?.toString() !== req.user.id
-    ) {
-      return res.status(403).json({ message: "Not authorized" });
+    if (req.user.role === "admin") {
+      return res.status(200).json(ticket);
     }
 
-    res.status(200).json(ticket);
+    if (
+      ticket.createdBy._id.toString() === req.user.id ||
+      ticket.assignedTo?.toString() === req.user.id
+    ) {
+      return res.status(200).json(ticket);
+    }
+
+    return res.status(403).json({ message: "Not authorized" });
   } catch (err) {
     console.error("❌ Error fetching ticket:", err.message);
     res.status(500).json({ message: "Failed to fetch ticket", error: err.message });
