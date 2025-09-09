@@ -1,5 +1,3 @@
-const mongoose = require("mongoose");
-
 const ticketSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -18,17 +16,10 @@ const ticketSchema = new mongoose.Schema(
     },
 
     category: { type: String, default: "general" },
-
-    // Who raised the ticket
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-
-    // Who it is assigned to (optional)
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-
-    // File uploads (screenshots, docs etc.)
     attachments: [{ type: String }],
 
-    // History of status changes
     history: [
       {
         status: { type: String },
@@ -36,8 +27,14 @@ const ticketSchema = new mongoose.Schema(
         changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       },
     ],
+
+    comments: [
+      {
+        text: { type: String, required: true },
+        addedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );
-
-module.exports = mongoose.model("Ticket", ticketSchema);

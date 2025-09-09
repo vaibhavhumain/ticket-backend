@@ -80,16 +80,14 @@ exports.getTicketById = async (req, res) => {
 
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Admins can see all
     if (req.user.role === "admin") {
       return res.status(200).json(ticket);
     }
-    // Check ownership/assignment
     const isCreator = ticket.createdBy?._id?.toString() === req.user.id;
     const isAssignee =
       ticket.assignedTo &&
-      (ticket.assignedTo._id?.toString() === req.user.id || // populated
-       ticket.assignedTo.toString() === req.user.id);       // raw ObjectId
+      (ticket.assignedTo._id?.toString() === req.user.id || 
+       ticket.assignedTo.toString() === req.user.id);      
 
     if (isCreator || isAssignee) {
       return res.status(200).json(ticket);
@@ -172,5 +170,49 @@ exports.deleteTicket = async (req, res) => {
   } catch (err) {
     console.error("❌ Error deleting ticket:", err.message);
     res.status(500).json({ message: "Failed to delete ticket", error: err.message });
+  }
+};
+
+// Add comment (and optional status update)
+exports.addComment = async (req, res) => {
+  try {
+    const { text, status } = req.body;
+    const ticket = await Ticket.findById(req.params.id).populate("createdBy", "name email");
+    if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+
+    // Add comment
+    ticket.comments.push({ text, addedBy: req.user.id });
+
+    // Status change
+    if (status && status !== ticket.status) {
+      ticket.status = status;
+      ticket.history.push({ status, changedBy: req.user.id });
+
+      // 🔔 Notify creator when resolved/closed
+      if (["resolved", "closed"].includes(status)) {
+        const notifyCreator = await Notification.create({
+          user: ticket.createdBy._id,
+          ticket: ticket._id,
+          title: `✅ Ticket "${ticket.title}" has been marked as ${status}`,
+        });
+        req.io.to(ticket.createdBy._id.toString()).emit("notification", notifyCreator);
+      }
+
+      // 🔔 (Optional) Notify assignee when status updated by admin
+      if (ticket.assignedTo && ticket.assignedTo.toString() !== req.user.id) {
+        const notifyAssignee = await Notification.create({
+          user: ticket.assignedTo,
+          ticket: ticket._id,
+          title: `⚡ Ticket "${ticket.title}" status changed to ${status}`,
+        });
+        req.io.to(ticket.assignedTo.toString()).emit("notification", notifyAssignee);
+      }
+    }
+
+    await ticket.save();
+    res.status(200).json(ticket);
+  } catch (err) {
+    console.error("❌ Error adding comment:", err.message);
+    res.status(500).json({ message: "Failed to add comment", error: err.message });
   }
 };
