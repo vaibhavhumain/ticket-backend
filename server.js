@@ -8,9 +8,8 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const userRoutes = require("./routes/userRoutes");
 const app = express();
 
-// Middleware
 app.use(cors({
-  origin: ["https://tickraise.netlify.app"], // ✅ allow only your frontend
+  origin: ["https://tickraise.netlify.app"],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
 }));
