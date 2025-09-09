@@ -15,14 +15,11 @@ exports.createTicket = async (req, res) => {
       assignedTo,
       attachments,
       history: [{ status: "open", changedBy: req.user.id }],
-      participants: [
-        { user: req.user.id, role: "creator" },
-        ...(assignedTo ? [{ user: assignedTo, role: "assignee" }] : []),
-      ],
     });
 
     await ticket.save();
 
+    // Notify creator
     const creatorNotif = await Notification.create({
       user: req.user.id,
       ticket: ticket._id,
@@ -30,6 +27,7 @@ exports.createTicket = async (req, res) => {
     });
     req.io.to(req.user.id.toString()).emit("notification", creatorNotif);
 
+    // Notify assignee if any
     if (assignedTo) {
       const assigneeNotif = await Notification.create({
         user: assignedTo,
@@ -56,22 +54,23 @@ exports.getTickets = async (req, res) => {
       return res.status(200).json({ all: tickets });
     }
 
+    // employee/developer → raised + received
     const raisedByMe = await Ticket.find({ createdBy: req.user.id })
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email");
 
-    const assignedToMe = await Ticket.find({ assignedTo: req.user.id })
+    const receivedByMe = await Ticket.find({ assignedTo: req.user.id })
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email");
 
-    res.status(200).json({ raisedByMe, assignedToMe });
+    res.status(200).json({ raisedByMe, receivedByMe });
   } catch (err) {
     console.error("❌ Error fetching tickets:", err.message);
     res.status(500).json({ message: "Failed to fetch tickets", error: err.message });
   }
 };
 
-// Get ticket by ID
+// Get single ticket by ID
 exports.getTicketById = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id)
@@ -103,6 +102,7 @@ exports.updateTicket = async (req, res) => {
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
+    // Admin or creator can update fields
     if (req.user.role === "admin" || ticket.createdBy.toString() === req.user.id) {
       if (title) ticket.title = title;
       if (description) ticket.description = description;
@@ -110,11 +110,9 @@ exports.updateTicket = async (req, res) => {
       if (category) ticket.category = category;
       if (attachments) ticket.attachments = attachments;
 
+      // change assignment
       if (assignedTo && assignedTo !== ticket.assignedTo?.toString()) {
         ticket.assignedTo = assignedTo;
-        if (!ticket.participants.some(p => p.user.toString() === assignedTo)) {
-          ticket.participants.push({ user: assignedTo, role: "assignee" });
-        }
 
         const assigneeNotif = await Notification.create({
           user: assignedTo,
@@ -125,6 +123,7 @@ exports.updateTicket = async (req, res) => {
       }
     }
 
+    // Only assigned user or admin can change status
     if (status && status !== ticket.status) {
       if (
         ticket.assignedTo?.toString() !== req.user.id &&
