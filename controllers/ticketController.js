@@ -1,5 +1,5 @@
 const Ticket = require("../models/Ticket");
-
+const Notification = require("../models/Notification");
 // Create a new ticket
 exports.createTicket = async (req, res) => {
   try {
