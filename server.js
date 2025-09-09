@@ -10,7 +10,6 @@ const userRoutes = require("./routes/userRoutes");
 
 const app = express();
 
-// ✅ CORS middleware
 app.use(cors({
   origin: [
     "https://tickraise.netlify.app",  
