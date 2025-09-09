@@ -22,6 +22,11 @@ exports.createTicket = async (req, res) => {
     });
 
     await ticket.save();
+    await Notification.create({
+  user: req.user.id,       
+  ticket: ticket._id,
+  title: `🎉 Ticket Raised: ${ticket.title}`,
+});
 
     // ✅ Return full ticket object
     res.status(201).json(ticket);
