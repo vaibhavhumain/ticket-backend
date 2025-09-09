@@ -5,6 +5,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const ticketRoutes = require("./routes/ticketRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const userRoutes = require("./routes/userRoutes");
 const app = express();
 
 // Middleware
@@ -13,6 +14,7 @@ app.use(express.json());
 app.use("/api/auth",authRoutes);
 app.use("/api/tickets",ticketRoutes);
 app.use("/api/notifications",notificationRoutes);
+app.use("/api/users",userRoutes);
 // Connect DB (only once!)
 connectDB();
 
