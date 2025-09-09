@@ -76,7 +76,8 @@ exports.getTicketById = async (req, res) => {
     const ticket = await Ticket.findById(req.params.id)
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email")
-      .populate("history.changedBy", "name email");
+      .populate("history.changedBy", "name email")
+      .populate("comments.addedBy", "name email");
 
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
@@ -183,7 +184,6 @@ exports.addComment = async (req, res) => {
     // Add comment
     ticket.comments.push({ text, addedBy: req.user.id });
 
-    // Status change
     if (status && status !== ticket.status) {
       ticket.status = status;
       ticket.history.push({ status, changedBy: req.user.id });
@@ -198,7 +198,7 @@ exports.addComment = async (req, res) => {
         req.io.to(ticket.createdBy._id.toString()).emit("notification", notifyCreator);
       }
 
-      // 🔔 (Optional) Notify assignee when status updated by admin
+      // 🔔 Notify assignee when status updated by admin
       if (ticket.assignedTo && ticket.assignedTo.toString() !== req.user.id) {
         const notifyAssignee = await Notification.create({
           user: ticket.assignedTo,
@@ -209,8 +209,16 @@ exports.addComment = async (req, res) => {
       }
     }
 
-    await ticket.save();
-    res.status(200).json(ticket);
+  await ticket.save();
+
+const updatedTicket = await Ticket.findById(ticket._id)
+  .populate("createdBy", "name email")
+  .populate("assignedTo", "name email")
+  .populate("comments.addedBy", "name email")
+  .populate("history.changedBy", "name email");
+
+res.status(200).json(updatedTicket);
+
   } catch (err) {
     console.error("❌ Error adding comment:", err.message);
     res.status(500).json({ message: "Failed to add comment", error: err.message });
