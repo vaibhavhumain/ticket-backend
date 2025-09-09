@@ -88,13 +88,9 @@ exports.getTicketById = async (req, res) => {
       return res.status(404).json({ message: "Ticket not found" });
     }
 
-    // Restrict access
-    if (
-      req.user.role !== "admin" &&
-      ticket.createdBy._id.toString() !== req.user.id &&
-      ticket.assignedTo?.toString() !== req.user.id
-    ) {
-      return res.status(403).json({ message: "Not authorized to view this ticket" });
+    // Role-based only (skip creator/assignee check)
+    if (!["admin", "developer", "employee"].includes(req.user.role)) {
+      return res.status(403).json({ message: "Not authorized" });
     }
 
     res.status(200).json(ticket);
