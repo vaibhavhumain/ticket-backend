@@ -10,16 +10,16 @@ const userRoutes = require("./routes/userRoutes");
 
 const app = express();
 
+// ✅ CORS middleware
 app.use(cors({
   origin: [
     "https://tickraise.netlify.app",  
-    "http://localhost:3000"
+    "http://localhost:3000"         
   ],
-  credentials: true
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 }));
-
-// ✅ Handle preflight requests explicitly
-app.options("*", cors());
 
 // Middleware
 app.use(express.json());
