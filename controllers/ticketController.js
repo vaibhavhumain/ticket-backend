@@ -27,7 +27,7 @@ exports.createTicket = async (req, res) => {
     });
     req.io.to(req.user.id.toString()).emit("notification", creatorNotif);
 
-    // Notify assignee if any
+    // Notify assignee
     if (assignedTo) {
       const assigneeNotif = await Notification.create({
         user: assignedTo,
@@ -44,7 +44,7 @@ exports.createTicket = async (req, res) => {
   }
 };
 
-// Get tickets
+// Get all tickets
 exports.getTickets = async (req, res) => {
   try {
     if (req.user.role === "admin") {
@@ -54,23 +54,23 @@ exports.getTickets = async (req, res) => {
       return res.status(200).json({ all: tickets });
     }
 
-    // employee/developer → raised + received
+    // Dev/Employee → only their own tickets (raised + assigned)
     const raisedByMe = await Ticket.find({ createdBy: req.user.id })
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email");
 
-    const receivedByMe = await Ticket.find({ assignedTo: req.user.id })
+    const assignedToMe = await Ticket.find({ assignedTo: req.user.id })
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email");
 
-    res.status(200).json({ raisedByMe, receivedByMe });
+    res.status(200).json({ raisedByMe, assignedToMe });
   } catch (err) {
     console.error("❌ Error fetching tickets:", err.message);
     res.status(500).json({ message: "Failed to fetch tickets", error: err.message });
   }
 };
 
-// Get single ticket by ID
+// Get single ticket
 exports.getTicketById = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id)
@@ -105,7 +105,7 @@ exports.updateTicket = async (req, res) => {
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Admin or creator can update fields
+    // Admin or creator can update ticket details
     if (req.user.role === "admin" || ticket.createdBy.toString() === req.user.id) {
       if (title) ticket.title = title;
       if (description) ticket.description = description;
@@ -113,10 +113,9 @@ exports.updateTicket = async (req, res) => {
       if (category) ticket.category = category;
       if (attachments) ticket.attachments = attachments;
 
-      // change assignment
+      // Assign ticket
       if (assignedTo && assignedTo !== ticket.assignedTo?.toString()) {
         ticket.assignedTo = assignedTo;
-
         const assigneeNotif = await Notification.create({
           user: assignedTo,
           ticket: ticket._id,
@@ -126,7 +125,7 @@ exports.updateTicket = async (req, res) => {
       }
     }
 
-    // Only assigned user or admin can change status
+    // Status updates allowed for assignee or admin
     if (status && status !== ticket.status) {
       if (
         ticket.assignedTo?.toString() !== req.user.id &&
