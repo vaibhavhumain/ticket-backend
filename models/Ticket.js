@@ -19,19 +19,16 @@ const ticketSchema = new mongoose.Schema(
 
     category: { type: String, default: "general" },
 
+    // Who raised the ticket
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
+    // Who it is assigned to (optional)
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
-    participants: [
-      {
-        user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-        role: { type: String, enum: ["creator", "assignee", "watcher"] },
-      },
-    ],
-
+    // File uploads (screenshots, docs etc.)
     attachments: [{ type: String }],
 
+    // History of status changes
     history: [
       {
         status: { type: String },

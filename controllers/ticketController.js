@@ -80,14 +80,18 @@ exports.getTicketById = async (req, res) => {
 
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
+    // Admins can see all
     if (req.user.role === "admin") {
       return res.status(200).json(ticket);
     }
+    // Check ownership/assignment
+    const isCreator = ticket.createdBy?._id?.toString() === req.user.id;
+    const isAssignee =
+      ticket.assignedTo &&
+      (ticket.assignedTo._id?.toString() === req.user.id || // populated
+       ticket.assignedTo.toString() === req.user.id);       // raw ObjectId
 
-    if (
-      ticket.createdBy._id.toString() === req.user.id ||
-      ticket.assignedTo?.toString() === req.user.id
-    ) {
+    if (isCreator || isAssignee) {
       return res.status(200).json(ticket);
     }
 
