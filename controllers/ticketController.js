@@ -1,7 +1,7 @@
 const Ticket = require("../models/Ticket");
 const Notification = require("../models/Notification");
 
-// ✅ Create a new ticket
+// Create a new ticket
 exports.createTicket = async (req, res) => {
   try {
     const { title, description, priority, category, assignedTo, attachments } = req.body;
@@ -14,12 +14,7 @@ exports.createTicket = async (req, res) => {
       createdBy: req.user.id,
       assignedTo,
       attachments,
-      history: [
-        {
-          status: "open",
-          changedBy: req.user.id,
-        },
-      ],
+      history: [{ status: "open", changedBy: req.user.id }],
       participants: [
         { user: req.user.id, role: "creator" },
         ...(assignedTo ? [{ user: assignedTo, role: "assignee" }] : []),
@@ -28,20 +23,20 @@ exports.createTicket = async (req, res) => {
 
     await ticket.save();
 
-    // 🔔 Notify creator
-    await Notification.create({
+    const creatorNotif = await Notification.create({
       user: req.user.id,
       ticket: ticket._id,
       title: `🎉 Ticket Raised: ${ticket.title}`,
     });
+    req.io.to(req.user.id.toString()).emit("notification", creatorNotif);
 
-    // 🔔 Notify assignee (if assigned at creation)
     if (assignedTo) {
-      await Notification.create({
+      const assigneeNotif = await Notification.create({
         user: assignedTo,
         ticket: ticket._id,
         title: `📌 You have been assigned a ticket: ${ticket.title}`,
       });
+      req.io.to(assignedTo.toString()).emit("notification", assigneeNotif);
     }
 
     res.status(201).json(ticket);
@@ -51,7 +46,7 @@ exports.createTicket = async (req, res) => {
   }
 };
 
-// ✅ Get all tickets (admin = all, user = grouped created/assigned)
+// Get tickets
 exports.getTickets = async (req, res) => {
   try {
     if (req.user.role === "admin") {
@@ -76,7 +71,7 @@ exports.getTickets = async (req, res) => {
   }
 };
 
-// ✅ Get single ticket by ID
+// Get ticket by ID
 exports.getTicketById = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id)
@@ -84,12 +79,13 @@ exports.getTicketById = async (req, res) => {
       .populate("assignedTo", "name email")
       .populate("history.changedBy", "name email");
 
-    if (!ticket) {
-      return res.status(404).json({ message: "Ticket not found" });
-    }
+    if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Role-based only (skip creator/assignee check)
-    if (!["admin", "developer", "employee"].includes(req.user.role)) {
+    if (
+      req.user.role !== "admin" &&
+      ticket.createdBy._id.toString() !== req.user.id &&
+      ticket.assignedTo?.toString() !== req.user.id
+    ) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
@@ -100,15 +96,13 @@ exports.getTicketById = async (req, res) => {
   }
 };
 
-// ✅ Update ticket (status, assign, etc.)
+// Update ticket
 exports.updateTicket = async (req, res) => {
   try {
     const { title, description, priority, status, category, assignedTo, attachments } = req.body;
-
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Allow creator or admin to edit base fields
     if (req.user.role === "admin" || ticket.createdBy.toString() === req.user.id) {
       if (title) ticket.title = title;
       if (description) ticket.description = description;
@@ -116,24 +110,21 @@ exports.updateTicket = async (req, res) => {
       if (category) ticket.category = category;
       if (attachments) ticket.attachments = attachments;
 
-      // Update assignment
       if (assignedTo && assignedTo !== ticket.assignedTo?.toString()) {
         ticket.assignedTo = assignedTo;
-
         if (!ticket.participants.some(p => p.user.toString() === assignedTo)) {
           ticket.participants.push({ user: assignedTo, role: "assignee" });
         }
 
-        // 🔔 Notify new assignee
-        await Notification.create({
+        const assigneeNotif = await Notification.create({
           user: assignedTo,
           ticket: ticket._id,
           title: `📌 You have been assigned a ticket: ${ticket.title}`,
         });
+        req.io.to(assignedTo.toString()).emit("notification", assigneeNotif);
       }
     }
 
-    // Allow only assigned user or admin to change status
     if (status && status !== ticket.status) {
       if (
         ticket.assignedTo?.toString() !== req.user.id &&
@@ -143,17 +134,14 @@ exports.updateTicket = async (req, res) => {
       }
 
       ticket.status = status;
-      ticket.history.push({
-        status,
-        changedBy: req.user.id,
-      });
+      ticket.history.push({ status, changedBy: req.user.id });
 
-      // 🔔 Notify creator about status change
-      await Notification.create({
+      const creatorNotif = await Notification.create({
         user: ticket.createdBy,
         ticket: ticket._id,
         title: `⚡ Ticket "${ticket.title}" status changed to ${status}`,
       });
+      req.io.to(ticket.createdBy.toString()).emit("notification", creatorNotif);
     }
 
     await ticket.save();
@@ -164,7 +152,7 @@ exports.updateTicket = async (req, res) => {
   }
 };
 
-// ✅ Delete ticket (only creator or admin)
+// Delete ticket
 exports.deleteTicket = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id);
