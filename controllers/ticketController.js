@@ -137,3 +137,4 @@ exports.deleteTicket = async (req, res) => {
     res.status(500).json({ message: "Failed to delete ticket", error: err.message });
   }
 };
+  
