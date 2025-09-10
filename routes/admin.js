@@ -20,20 +20,47 @@ router.get("/tickets", auth, requireRole("admin"), async (req, res) => {
 
 router.get("/users", auth, requireRole("admin"), async (req, res) => {
   try {
-    const users = await User.find().select("-password");
+    const {
+      role,            // department filter
+      priority,        // high, medium, low
+      assignedAfter,   // date filter (ISO string)
+      assignedBefore,
+      resolvedAfter,
+      resolvedBefore,
+    } = req.query;
+
+    // Filter users by role (department) if given
+    const userFilter = role ? { role } : {};
+    const users = await User.find(userFilter).select("-password");
 
     const usersWithStats = await Promise.all(
       users.map(async (user) => {
-        // Tickets raised by this user
-        const ticketsRaised = await Ticket.countDocuments({
-          createdBy: user._id,
-        });
+        // base queries
+        let raisedQuery = { createdBy: user._id };
+        let resolvedQuery = { assignedTo: user._id, status: { $in: ["resolved", "closed"] } };
 
-        // Tickets resolved by this user (assigned to them)
-        const ticketsResolved = await Ticket.countDocuments({
-          assignedTo: user._id,
-          status: { $in: ["resolved", "closed"] },
-        });
+        // filter by priority
+        if (priority) {
+          raisedQuery.priority = priority;
+          resolvedQuery.priority = priority;
+        }
+
+        // filter by assigned date (ticket creation time)
+        if (assignedAfter || assignedBefore) {
+          resolvedQuery.createdAt = {};
+          if (assignedAfter) resolvedQuery.createdAt.$gte = new Date(assignedAfter);
+          if (assignedBefore) resolvedQuery.createdAt.$lte = new Date(assignedBefore);
+        }
+
+        // filter by resolved date (last update)
+        if (resolvedAfter || resolvedBefore) {
+          resolvedQuery.updatedAt = {};
+          if (resolvedAfter) resolvedQuery.updatedAt.$gte = new Date(resolvedAfter);
+          if (resolvedBefore) resolvedQuery.updatedAt.$lte = new Date(resolvedBefore);
+        }
+
+        const ticketsRaised = await Ticket.countDocuments(raisedQuery);
+        const ticketsResolved = await Ticket.countDocuments(resolvedQuery);
 
         return {
           _id: user._id,
@@ -52,7 +79,6 @@ router.get("/users", auth, requireRole("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 // Update role (admin only)
 router.put("/users/:id/role", auth, requireRole("admin"), async (req, res) => {
