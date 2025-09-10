@@ -19,6 +19,11 @@ exports.createTicket = async (req, res) => {
 
     await ticket.save();
 
+    // Populate for response
+    const populatedTicket = await Ticket.findById(ticket._id)
+      .populate("createdBy", "name email")
+      .populate("assignedTo", "name email");
+
     // Notify creator
     const creatorNotif = await Notification.create({
       user: req.user.id,
@@ -37,7 +42,10 @@ exports.createTicket = async (req, res) => {
       req.io.to(assignedTo.toString()).emit("notification", assigneeNotif);
     }
 
-    res.status(201).json(ticket);
+    // 🔥 Emit socket event
+    req.io.emit("ticketCreated", populatedTicket);
+
+    res.status(201).json(populatedTicket);
   } catch (err) {
     console.error("❌ Error creating ticket:", err.message);
     res.status(500).json({ message: "Failed to create ticket", error: err.message });
@@ -87,8 +95,8 @@ exports.getTicketById = async (req, res) => {
     const isCreator = ticket.createdBy?._id?.toString() === req.user.id;
     const isAssignee =
       ticket.assignedTo &&
-      (ticket.assignedTo._id?.toString() === req.user.id || 
-       ticket.assignedTo.toString() === req.user.id);      
+      (ticket.assignedTo._id?.toString() === req.user.id ||
+        ticket.assignedTo.toString() === req.user.id);
 
     if (isCreator || isAssignee) {
       return res.status(200).json(ticket);
@@ -149,7 +157,15 @@ exports.updateTicket = async (req, res) => {
     }
 
     await ticket.save();
-    res.status(200).json(ticket);
+
+    const updatedTicket = await Ticket.findById(ticket._id)
+      .populate("createdBy", "name email")
+      .populate("assignedTo", "name email")
+      .populate("comments.addedBy", "name email")
+      .populate("history.changedBy", "name email");
+
+    req.io.emit("ticketUpdated", updatedTicket); // 🔥 real-time update
+    res.status(200).json(updatedTicket);
   } catch (err) {
     console.error("❌ Error updating ticket:", err.message);
     res.status(500).json({ message: "Failed to update ticket", error: err.message });
@@ -167,6 +183,8 @@ exports.deleteTicket = async (req, res) => {
     }
 
     await ticket.deleteOne();
+
+    req.io.emit("ticketDeleted", { id: req.params.id }); // 🔥 broadcast deletion
     res.status(200).json({ message: "Ticket deleted successfully" });
   } catch (err) {
     console.error("❌ Error deleting ticket:", err.message);
@@ -181,8 +199,10 @@ exports.addComment = async (req, res) => {
     const ticket = await Ticket.findById(req.params.id).populate("createdBy", "name email");
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Add comment
-    ticket.comments.push({ text, addedBy: req.user.id });
+    // Add comment only if not empty
+    if (text && text.trim() !== "") {
+      ticket.comments.push({ text, addedBy: req.user.id });
+    }
 
     if (status && status !== ticket.status) {
       ticket.status = status;
@@ -209,16 +229,16 @@ exports.addComment = async (req, res) => {
       }
     }
 
-  await ticket.save();
+    await ticket.save();
 
-const updatedTicket = await Ticket.findById(ticket._id)
-  .populate("createdBy", "name email")
-  .populate("assignedTo", "name email")
-  .populate("comments.addedBy", "name email")
-  .populate("history.changedBy", "name email");
+    const updatedTicket = await Ticket.findById(ticket._id)
+      .populate("createdBy", "name email")
+      .populate("assignedTo", "name email")
+      .populate("comments.addedBy", "name email")
+      .populate("history.changedBy", "name email");
 
-res.status(200).json(updatedTicket);
-
+    req.io.emit("ticketUpdated", updatedTicket); // 🔥 real-time update
+    res.status(200).json(updatedTicket);
   } catch (err) {
     console.error("❌ Error adding comment:", err.message);
     res.status(500).json({ message: "Failed to add comment", error: err.message });
