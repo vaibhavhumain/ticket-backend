@@ -9,6 +9,7 @@ const authRoutes = require("./routes/authRoutes");
 const ticketRoutes = require("./routes/ticketRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const userRoutes = require("./routes/userRoutes");
+const adminRoutes = require("./routes/admin");
 
 const app = express();
 
@@ -54,14 +55,16 @@ app.use(cors({
   credentials: true,
 }));
 
+
 app.use(express.json());
+
+connectDB();
 
 app.use("/api/auth", authRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/users", userRoutes);
-
-connectDB();
+app.use("/admin",adminRoutes);
 
 app.get("/", (req, res) => {
   res.send("Ticket system backend running ✅");
