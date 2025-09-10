@@ -1,11 +1,12 @@
 const express = require("express");
 const auth = require("../middleware/auth");
 const { requireRole } = require("../middleware/roleMiddleware");
-const User = require("./model/User");
 const Ticket = require("../models/Ticket");
+const User = require("../models/User"); // ✅ Missing import
 
 const router = express.Router();
 
+// Get all tickets (admin only)
 router.get("/tickets", auth, requireRole("admin"), async (req, res) => {
   try {
     const tickets = await Ticket.find()
@@ -17,31 +18,45 @@ router.get("/tickets", auth, requireRole("admin"), async (req, res) => {
   }
 });
 
-// Get all users
-router.get("/users", async (req, res) => {
-  const users = await User.find().select("-password");
-  res.json(users);
+// Get all users (admin only)
+router.get("/users", auth, requireRole("admin"), async (req, res) => {
+  try {
+    const users = await User.find().select("-password");
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
-// Update role
-router.put("/users/:id/role", async (req, res) => {
-  const { role } = req.body;
-  const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true });
-  res.json(user);
+// Update role (admin only)
+router.put("/users/:id/role", auth, requireRole("admin"), async (req, res) => {
+  try {
+    const { role } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true }
+    );
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
-// Reports
-router.get("/reports", async (req, res) => {
-  const totalTickets = await Ticket.countDocuments();
-  const open = await Ticket.countDocuments({ status: "open" });
-  const resolved = await Ticket.countDocuments({ status: "resolved" });
-  const closed = await Ticket.countDocuments({ status: "closed" });
-  const high = await Ticket.countDocuments({ priority: "high" });
-  const medium = await Ticket.countDocuments({ priority: "medium" });
-  const low = await Ticket.countDocuments({ priority: "low" });
+// Reports (admin only)
+router.get("/reports", auth, requireRole("admin"), async (req, res) => {
+  try {
+    const totalTickets = await Ticket.countDocuments();
+    const open = await Ticket.countDocuments({ status: "open" });
+    const resolved = await Ticket.countDocuments({ status: "resolved" });
+    const high = await Ticket.countDocuments({ priority: "high" });
+    const medium = await Ticket.countDocuments({ priority: "medium" });
+    const low = await Ticket.countDocuments({ priority: "low" });
 
-  res.json({ totalTickets, open, resolved, high, medium, low });
+    res.json({ totalTickets, open, resolved, high, medium, low });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
-
 
 module.exports = router;
