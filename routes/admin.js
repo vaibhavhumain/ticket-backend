@@ -18,46 +18,35 @@ router.get("/tickets", auth, requireRole("admin"), async (req, res) => {
   }
 });
 
-// Get all users (admin only)
 router.get("/users", auth, requireRole("admin"), async (req, res) => {
   try {
-    const users = await User.aggregate([
-      {
-        $lookup: {
-          from: "tickets",
-          localField: "_id",
-          foreignField: "createdBy",
-          as: "tickets",
-        },
-      },
-      {
-        $addFields: {
-          ticketsRaised: { $size: "$tickets" },
-          ticketsResolved: {
-            $size: {
-              $filter: {
-                input: "$tickets",
-                as: "t",
-                cond: {
-                  $or: [
-                    { $eq: ["$$t.status", "resolved"] },
-                    { $eq: ["$$t.status", "closed"] },
-                  ],
-                },
-              },
-            },
-          },
-        },
-      },
-      {
-        $project: {
-          password: 0, // hide password
-          tickets: 0,  // don’t send full ticket list
-        },
-      },
-    ]);
+    const users = await User.find().select("-password");
 
-    res.json(users);
+    const usersWithStats = await Promise.all(
+      users.map(async (user) => {
+        // Tickets raised by this user
+        const ticketsRaised = await Ticket.countDocuments({
+          createdBy: user._id,
+        });
+
+        // Tickets resolved by this user (assigned to them)
+        const ticketsResolved = await Ticket.countDocuments({
+          assignedTo: user._id,
+          status: { $in: ["resolved", "closed"] },
+        });
+
+        return {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          ticketsRaised,
+          ticketsResolved,
+        };
+      })
+    );
+
+    res.json(usersWithStats);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
