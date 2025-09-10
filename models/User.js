@@ -16,7 +16,7 @@ const userSchema = new mongoose.Schema(
         "Production",
         "Purchase",
         "Accounts",
-        "Admin",
+        "admin",
       ],
       default: "IT", // 👈 set whichever you want as default
     },
