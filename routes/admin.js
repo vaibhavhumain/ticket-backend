@@ -37,7 +37,10 @@ router.get("/users", auth, requireRole("admin"), async (req, res) => {
       users.map(async (user) => {
         // base queries
         let raisedQuery = { createdBy: user._id };
-        let resolvedQuery = { assignedTo: user._id, status: { $in: ["resolved", "closed"] } };
+        let resolvedQuery = {
+          assignedTo: user._id,
+          status: { $in: ["resolved", "closed"] },
+        };
 
         // filter by priority
         if (priority) {
@@ -62,11 +65,24 @@ router.get("/users", auth, requireRole("admin"), async (req, res) => {
         const ticketsRaised = await Ticket.countDocuments(raisedQuery);
         const ticketsResolved = await Ticket.countDocuments(resolvedQuery);
 
+        // ✅ Get highest priority ticket assigned to the user
+        const priorities = ["high", "medium", "low"];
+        let userPriority = null;
+
+        for (const p of priorities) {
+          const exists = await Ticket.exists({ assignedTo: user._id, priority: p });
+          if (exists) {
+            userPriority = p;
+            break; // stop at the first (highest) match
+          }
+        }
+
         return {
           _id: user._id,
           name: user.name,
           email: user.email,
           role: user.role,
+          priority: userPriority, // now each user has high/medium/low
           ticketsRaised,
           ticketsResolved,
         };
