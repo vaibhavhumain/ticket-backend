@@ -64,7 +64,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/users", userRoutes);
-app.use("/admin",adminRoutes);
+app.use("/api/admin",adminRoutes);
 
 app.get("/", (req, res) => {
   res.send("Ticket system backend running ✅");
