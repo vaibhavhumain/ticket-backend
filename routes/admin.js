@@ -21,12 +21,49 @@ router.get("/tickets", auth, requireRole("admin"), async (req, res) => {
 // Get all users (admin only)
 router.get("/users", auth, requireRole("admin"), async (req, res) => {
   try {
-    const users = await User.find().select("-password");
+    const users = await User.aggregate([
+      {
+        $lookup: {
+          from: "tickets",
+          localField: "_id",
+          foreignField: "createdBy",
+          as: "tickets",
+        },
+      },
+      {
+        $addFields: {
+          ticketsRaised: { $size: "$tickets" },
+          ticketsResolved: {
+            $size: {
+              $filter: {
+                input: "$tickets",
+                as: "t",
+                cond: {
+                  $or: [
+                    { $eq: ["$$t.status", "resolved"] },
+                    { $eq: ["$$t.status", "closed"] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          password: 0, // hide password
+          tickets: 0,  // don’t send full ticket list
+        },
+      },
+    ]);
+
     res.json(users);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // Update role (admin only)
 router.put("/users/:id/role", auth, requireRole("admin"), async (req, res) => {
