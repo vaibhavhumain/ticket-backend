@@ -1,7 +1,7 @@
 const Ticket = require("../models/Ticket");
 const Notification = require("../models/Notification");
+const sendEmail = require("../utils/email");
 
-// Create a new ticket
 exports.createTicket = async (req, res) => {
   try {
     const { title, description, priority, category, assignedTo, attachments } = req.body;
@@ -19,40 +19,43 @@ exports.createTicket = async (req, res) => {
 
     await ticket.save();
 
-    // Populate for response
     const populatedTicket = await Ticket.findById(ticket._id)
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email");
 
-    // Notify creator
-    const creatorNotif = await Notification.create({
+    await Notification.create({
       user: req.user.id,
       ticket: ticket._id,
       title: `🎉 Ticket Raised: ${ticket.title}`,
     });
-    req.io.to(req.user.id.toString()).emit("notification", creatorNotif);
+    await sendEmail({
+      to: populatedTicket.createdBy.email,
+      subject: `🎉 Ticket Created: ${ticket.title}`,
+      text: `Your ticket "${ticket.title}" has been created.`,
+      html: `<p>Your ticket <b>${ticket.title}</b> has been created successfully.</p>`,
+    });
 
-    // Notify assignee
-    if (assignedTo) {
-      const assigneeNotif = await Notification.create({
+    if (assignedTo && populatedTicket.assignedTo) {
+      await Notification.create({
         user: assignedTo,
         ticket: ticket._id,
         title: `📌 You have been assigned a ticket: ${ticket.title}`,
       });
-      req.io.to(assignedTo.toString()).emit("notification", assigneeNotif);
+      await sendEmail({
+        to: populatedTicket.assignedTo.email,
+        subject: `📌 New Ticket Assigned: ${ticket.title}`,
+        text: `A new ticket "${ticket.title}" has been assigned to you.`,
+        html: `<p>You have been assigned a new ticket: <b>${ticket.title}</b>.</p>`,
+      });
     }
 
-    // 🔥 Emit socket event
     req.io.emit("ticketCreated", populatedTicket);
-
     res.status(201).json(populatedTicket);
   } catch (err) {
-    console.error("❌ Error creating ticket:", err.message);
     res.status(500).json({ message: "Failed to create ticket", error: err.message });
   }
 };
 
-// Get all tickets
 exports.getTickets = async (req, res) => {
   try {
     if (req.user.role === "admin") {
@@ -62,7 +65,6 @@ exports.getTickets = async (req, res) => {
       return res.status(200).json({ all: tickets });
     }
 
-    // Dev/Employee → only their own tickets (raised + assigned)
     const raisedByMe = await Ticket.find({ createdBy: req.user.id })
       .populate("createdBy", "name email")
       .populate("assignedTo", "name email");
@@ -73,12 +75,10 @@ exports.getTickets = async (req, res) => {
 
     res.status(200).json({ raisedByMe, assignedToMe });
   } catch (err) {
-    console.error("❌ Error fetching tickets:", err.message);
     res.status(500).json({ message: "Failed to fetch tickets", error: err.message });
   }
 };
 
-// Get single ticket
 exports.getTicketById = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id)
@@ -89,54 +89,52 @@ exports.getTicketById = async (req, res) => {
 
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    if (req.user.role === "admin") {
-      return res.status(200).json(ticket);
-    }
+    if (req.user.role === "admin") return res.status(200).json(ticket);
+
     const isCreator = ticket.createdBy?._id?.toString() === req.user.id;
     const isAssignee =
       ticket.assignedTo &&
       (ticket.assignedTo._id?.toString() === req.user.id ||
         ticket.assignedTo.toString() === req.user.id);
 
-    if (isCreator || isAssignee) {
-      return res.status(200).json(ticket);
-    }
+    if (isCreator || isAssignee) return res.status(200).json(ticket);
 
     return res.status(403).json({ message: "Not authorized" });
   } catch (err) {
-    console.error("❌ Error fetching ticket:", err.message);
     res.status(500).json({ message: "Failed to fetch ticket", error: err.message });
   }
 };
 
-// Update ticket
 exports.updateTicket = async (req, res) => {
   try {
     const { title, description, priority, status, category, assignedTo, attachments } = req.body;
-    const ticket = await Ticket.findById(req.params.id);
+    const ticket = await Ticket.findById(req.params.id).populate("createdBy", "name email assignedTo");
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Admin or creator can update ticket details
-    if (req.user.role === "admin" || ticket.createdBy.toString() === req.user.id) {
+    if (req.user.role === "admin" || ticket.createdBy._id.toString() === req.user.id) {
       if (title) ticket.title = title;
       if (description) ticket.description = description;
       if (priority) ticket.priority = priority;
       if (category) ticket.category = category;
       if (attachments) ticket.attachments = attachments;
 
-      // Assign ticket
       if (assignedTo && assignedTo !== ticket.assignedTo?.toString()) {
         ticket.assignedTo = assignedTo;
-        const assigneeNotif = await Notification.create({
+        const updatedTicketAssignee = await Ticket.findById(ticket._id).populate("assignedTo", "name email");
+        await Notification.create({
           user: assignedTo,
           ticket: ticket._id,
           title: `📌 You have been assigned a ticket: ${ticket.title}`,
         });
-        req.io.to(assignedTo.toString()).emit("notification", assigneeNotif);
+        await sendEmail({
+          to: updatedTicketAssignee.assignedTo.email,
+          subject: `📌 Ticket Assigned: ${ticket.title}`,
+          text: `You have been assigned ticket "${ticket.title}".`,
+          html: `<p>You are now assigned to ticket: <b>${ticket.title}</b>.</p>`,
+        });
       }
     }
 
-    // Status updates allowed for assignee or admin
     if (status && status !== ticket.status) {
       if (
         ticket.assignedTo?.toString() !== req.user.id &&
@@ -148,12 +146,17 @@ exports.updateTicket = async (req, res) => {
       ticket.status = status;
       ticket.history.push({ status, changedBy: req.user.id });
 
-      const creatorNotif = await Notification.create({
+      await Notification.create({
         user: ticket.createdBy,
         ticket: ticket._id,
         title: `⚡ Ticket "${ticket.title}" status changed to ${status}`,
       });
-      req.io.to(ticket.createdBy.toString()).emit("notification", creatorNotif);
+      await sendEmail({
+        to: ticket.createdBy.email,
+        subject: `⚡ Ticket "${ticket.title}" status changed`,
+        text: `Your ticket "${ticket.title}" is now ${status}.`,
+        html: `<p>Status of ticket <b>${ticket.title}</b> has been updated to <b>${status}</b>.</p>`,
+      });
     }
 
     await ticket.save();
@@ -164,15 +167,13 @@ exports.updateTicket = async (req, res) => {
       .populate("comments.addedBy", "name email")
       .populate("history.changedBy", "name email");
 
-    req.io.emit("ticketUpdated", updatedTicket); // 🔥 real-time update
+    req.io.emit("ticketUpdated", updatedTicket);
     res.status(200).json(updatedTicket);
   } catch (err) {
-    console.error("❌ Error updating ticket:", err.message);
     res.status(500).json({ message: "Failed to update ticket", error: err.message });
   }
 };
 
-// Delete ticket
 exports.deleteTicket = async (req, res) => {
   try {
     const ticket = await Ticket.findById(req.params.id);
@@ -183,49 +184,61 @@ exports.deleteTicket = async (req, res) => {
     }
 
     await ticket.deleteOne();
-
-    req.io.emit("ticketDeleted", { id: req.params.id }); // 🔥 broadcast deletion
+    req.io.emit("ticketDeleted", { id: req.params.id });
     res.status(200).json({ message: "Ticket deleted successfully" });
   } catch (err) {
-    console.error("❌ Error deleting ticket:", err.message);
     res.status(500).json({ message: "Failed to delete ticket", error: err.message });
   }
 };
 
-// Add comment (and optional status update)
 exports.addComment = async (req, res) => {
   try {
     const { text, status } = req.body;
-    const ticket = await Ticket.findById(req.params.id).populate("createdBy", "name email");
+    const ticket = await Ticket.findById(req.params.id)
+      .populate("createdBy", "name email")
+      .populate("assignedTo", "name email");
     if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
-    // Add comment only if not empty
     if (text && text.trim() !== "") {
       ticket.comments.push({ text, addedBy: req.user.id });
+      await sendEmail({
+        to: ticket.createdBy.email,
+        subject: `💬 New comment on ticket "${ticket.title}"`,
+        text: `A new comment has been added to your ticket.`,
+        html: `<p>A new comment was added to ticket <b>${ticket.title}</b>.</p>`,
+      });
     }
 
     if (status && status !== ticket.status) {
       ticket.status = status;
       ticket.history.push({ status, changedBy: req.user.id });
 
-      // 🔔 Notify creator when resolved/closed
       if (["resolved", "closed"].includes(status)) {
-        const notifyCreator = await Notification.create({
+        await Notification.create({
           user: ticket.createdBy._id,
           ticket: ticket._id,
           title: `✅ Ticket "${ticket.title}" has been marked as ${status}`,
         });
-        req.io.to(ticket.createdBy._id.toString()).emit("notification", notifyCreator);
+        await sendEmail({
+          to: ticket.createdBy.email,
+          subject: `✅ Ticket "${ticket.title}" marked as ${status}`,
+          text: `Your ticket "${ticket.title}" is now ${status}.`,
+          html: `<p>Your ticket <b>${ticket.title}</b> has been marked as <b>${status}</b>.</p>`,
+        });
       }
 
-      // 🔔 Notify assignee when status updated by admin
       if (ticket.assignedTo && ticket.assignedTo.toString() !== req.user.id) {
-        const notifyAssignee = await Notification.create({
+        await Notification.create({
           user: ticket.assignedTo,
           ticket: ticket._id,
           title: `⚡ Ticket "${ticket.title}" status changed to ${status}`,
         });
-        req.io.to(ticket.assignedTo.toString()).emit("notification", notifyAssignee);
+        await sendEmail({
+          to: ticket.assignedTo.email,
+          subject: `⚡ Ticket "${ticket.title}" status changed`,
+          text: `The ticket "${ticket.title}" is now ${status}.`,
+          html: `<p>The ticket <b>${ticket.title}</b> is now <b>${status}</b>.</p>`,
+        });
       }
     }
 
@@ -237,10 +250,10 @@ exports.addComment = async (req, res) => {
       .populate("comments.addedBy", "name email")
       .populate("history.changedBy", "name email");
 
-    req.io.emit("ticketUpdated", updatedTicket); // 🔥 real-time update
+    req.io.emit("ticketUpdated", updatedTicket);
     res.status(200).json(updatedTicket);
   } catch (err) {
-    console.error("❌ Error adding comment:", err.message);
     res.status(500).json({ message: "Failed to add comment", error: err.message });
   }
 };
+ 
